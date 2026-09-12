@@ -1,3 +1,3 @@
 // Colle ici les valeurs de ton projet Supabase (Settings > API).
 window.AUTOLEAD_SUPABASE_URL = "https://supabase.com/dashboard/project/ssdfycziuiqbcfnkvwsm/settings/api-keys";
-window.AUTOLEAD_SUPABASE_ANON_KEY = "sb_publishable_9wnzMOUD1KcfpLhrTz2Wbw_5OWFfTqj";
+window.AUTOLEAD_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzZGZ5Y3ppdWlxYmNmbmt2d3NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxNTI3MDIsImV4cCI6MjEwNDcyODcwMn0.Ccgp6M2UHNieCHaPQqZhPTiXoHHa4Y0z3ag2HqwjmZk";
