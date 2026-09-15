@@ -5,6 +5,7 @@
   if (!url || !key) return;
  
   const client = window.supabase.createClient(url, key);
+  window.autoleadClient = client;
   let isAuthenticated = false;
  
   function isEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
