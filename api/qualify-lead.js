@@ -1,16 +1,21 @@
 // Fonction serverless Vercel — s'exécute côté serveur, jamais dans le navigateur.
-// La clé ANTHROPIC_API_KEY doit être ajoutée dans Vercel → Settings → Environment Variables.
-// Ne JAMAIS mettre cette clé dans un fichier .js chargé par le site (supabase-config.js, cloud.js, etc.)
+// La clé GEMINI_API_KEY doit être ajoutée dans Vercel → Settings → Environment Variables.
+// Clé gratuite (sans carte bancaire) à récupérer sur https://aistudio.google.com/apikey
  
 const SUPABASE_URL = "https://ssdfycziuiqbcfnkvwsm.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_uJBQEjTN0LKw4-nyW3_Nag_sVlLIvFF";
+ 
+// Si ce modèle finit par renvoyer une erreur "model not found", vérifie la liste
+// des modèles disponibles gratuitement sur https://aistudio.google.com et remplace
+// le nom ci-dessous par un modèle "flash" ou "flash-lite" actuel.
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
  
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Méthode non autorisée" });
   }
  
-  // 1) Vérifie que la requête vient bien d'un utilisateur connecté (évite l'abus et les coûts).
+  // 1) Vérifie que la requête vient bien d'un utilisateur connecté (évite l'abus).
   const authHeader = req.headers.authorization || "";
   const token = authHeader.replace("Bearer ", "").trim();
   if (!token) return res.status(401).json({ error: "Non authentifié" });
@@ -47,19 +52,20 @@ Réponds UNIQUEMENT avec un objet JSON strictement de cette forme, sans aucun te
 {"score": <nombre entier entre 0 et 100>, "category": "chaud" | "tiède" | "froid", "reason": "<une phrase courte en français expliquant la note>"}`;
  
   try {
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 300,
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
+    const aiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      }
+    );
  
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
@@ -67,7 +73,8 @@ Réponds UNIQUEMENT avec un objet JSON strictement de cette forme, sans aucun te
     }
  
     const data = await aiResponse.json();
-    const text = (data.content || []).map((b) => b.text || "").join("").trim();
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const text = parts.map((p) => p.text || "").join("").trim();
     const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
  
