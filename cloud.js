@@ -3,14 +3,14 @@
   const url = window.AUTOLEAD_SUPABASE_URL;
   const key = window.AUTOLEAD_SUPABASE_ANON_KEY;
   if (!url || !key) return;
- 
+
   const client = window.supabase.createClient(url, key);
   window.autoleadClient = client;
   let isAuthenticated = false;
- 
+
   function isEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
   function isPhone(v) { return /^\+?[0-9\s.-]{6,}$/.test(v); }
- 
+
   function friendlyError(message) {
     if (/Invalid login credentials/i.test(message)) {
       return "Email/téléphone ou mot de passe incorrect. Vérifie aussi que tu as bien confirmé ton adresse email.";
@@ -26,7 +26,7 @@
     }
     return message;
   }
- 
+
   function buildAuthOverlay() {
     const overlay = document.createElement('div');
     overlay.className = 'modal open';
@@ -49,7 +49,7 @@
     </div>`;
     return overlay;
   }
- 
+
   function buildResetOverlay() {
     const overlay = document.createElement('div');
     overlay.className = 'modal open';
@@ -65,7 +65,7 @@
     </div>`;
     return overlay;
   }
- 
+
   function buildNewPasswordOverlay() {
     const overlay = document.createElement('div');
     overlay.className = 'modal open';
@@ -80,9 +80,9 @@
     </div>`;
     return overlay;
   }
- 
+
   async function loadCloudLeads() {
-    const { data, error } = await client.from('leads').select('id,name,company,interest,score,status,follow').order('updated_at', { ascending: false });
+    const { data, error } = await client.from('leads').select('id,name,company,interest,score,reason,status,follow').order('updated_at', { ascending: false });
     if (error) return toast('Erreur de chargement : ' + error.message);
     if (data.length) {
       leads.splice(0, leads.length, ...data);
@@ -93,20 +93,20 @@
       await syncCloud();
     }
   }
- 
+
   async function syncCloud() {
     if (!isAuthenticated) return;
     const payload = leads.map(l => ({ ...l, id: l.id || (l.id = crypto.randomUUID()), updated_at: new Date().toISOString() }));
     const { error } = await client.from('leads').upsert(payload);
     if (error) toast('Sauvegarde impossible : ' + error.message);
   }
- 
+
   const oldPersist = persist;
   window.persist = function () {
     oldPersist();
     if (isAuthenticated) syncCloud();
   };
- 
+
   async function connect(identifier, password, signup) {
     identifier = (identifier || '').trim();
     if (!identifier || !password) return toast('Renseigne tes identifiants.');
@@ -114,7 +114,7 @@
     if (isEmail(identifier)) credentials = { email: identifier, password };
     else if (isPhone(identifier)) credentials = { phone: identifier, password };
     else return toast('Entre un email valide ou un numéro de téléphone.');
- 
+
     const action = signup ? client.auth.signUp(credentials) : client.auth.signInWithPassword(credentials);
     const { data, error } = await action;
     if (error) return toast(friendlyError(error.message));
@@ -128,7 +128,7 @@
     await loadCloudLeads();
     toast('Connecté — synchronisation active');
   }
- 
+
   async function sendResetLink(email) {
     email = (email || '').trim();
     if (!isEmail(email)) return toast('Entre un email valide.');
@@ -142,7 +142,7 @@
     document.body.appendChild(overlay);
     wireAuthOverlay();
   }
- 
+
   function wireAuthOverlay() {
     document.getElementById('signIn').onclick = () =>
       connect(document.getElementById('authEmail').value, document.getElementById('authPassword').value, false);
@@ -159,7 +159,7 @@
       toast("Ton identifiant est l'email (ou le téléphone) utilisé à l'inscription. Si tu ne t'en souviens plus, contacte le support pour vérifier ton compte.");
     };
   }
- 
+
   function wireResetOverlay() {
     document.getElementById('resetSend').onclick = () =>
       sendResetLink(document.getElementById('resetEmail').value);
@@ -169,7 +169,7 @@
       wireAuthOverlay();
     };
   }
- 
+
   function showNewPasswordForm() {
     document.getElementById('authModal')?.remove();
     document.getElementById('resetModal')?.remove();
@@ -186,23 +186,23 @@
       await loadCloudLeads();
     };
   }
- 
+
   client.auth.onAuthStateChange((event) => {
     if (event === 'PASSWORD_RECOVERY') showNewPasswordForm();
   });
- 
+
   const { data: { session } } = await client.auth.getSession();
   if (session) {
     isAuthenticated = true;
     await loadCloudLeads();
     return;
   }
- 
+
   if (window.location.hash.includes('type=recovery')) {
     showNewPasswordForm();
     return;
   }
- 
+
   document.body.appendChild(buildAuthOverlay());
   wireAuthOverlay();
 })();
