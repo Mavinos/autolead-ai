@@ -22,17 +22,23 @@ function persist(){localStorage.setItem(STORE,JSON.stringify({leads,automations:
 function renderLeads(){const q=el('search')?.value?.toLowerCase()||'';el('allTable').innerHTML=table(leads.filter(l=>(l.name+l.company).toLowerCase().includes(q)))}
 function render(){el('recentTable').innerHTML=table(leads.slice(0,4));el('followupTable').innerHTML=table(leads.filter(l=>l.interest!=='froid'));el('quickList').innerHTML=leads.filter(l=>l.interest==='chaud').slice(0,3).map(l=>`<div class="quick-item"><span><b>${l.name}</b><br><small style="color:#778099">${l.follow}</small></span>${tag(l.interest)}</div>`).join('');el('navCount').textContent=leads.length;el('totalMetric').textContent=128+Math.max(0,leads.length-5);el('qualifiedMetric').textContent=64+leads.filter(l=>l.score>=70).length-3;const revenue=leads.filter(l=>l.score>=70).length*384;document.querySelector('.report-number').textContent=revenue.toLocaleString('fr-FR')+' €';renderLeads();document.querySelectorAll('.switch').forEach((s,i)=>{s.style.background=automationState[i]?'var(--brand)':'#cfd4e2';s.firstElementChild.style.marginLeft=automationState[i]?'16px':'0';});}
 async function sendFollowupEmail(lead){
-  const client=window.autoleadClient;
-  const session=client?(await client.auth.getSession()).data.session:null;
-  if(!client||!session){toast('Connecte-toi pour envoyer une relance.');return false}
-  const res=await fetch('/api/send-followup',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
-    body:JSON.stringify({name:lead.name,email:lead.email,company:lead.company})
-  });
-  const result=await res.json();
-  if(!res.ok){toast('Erreur envoi à '+lead.name+' : '+(result.error||'inconnue'));return false}
-  return true;
+  try{
+    const client=window.autoleadClient;
+    const session=client?(await client.auth.getSession()).data.session:null;
+    if(!client||!session){toast('Connecte-toi pour envoyer une relance.');return false}
+    const res=await fetch('/api/send-followup',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({name:lead.name,email:lead.email,company:lead.company})
+    });
+    let result={};
+    try{result=await res.json()}catch(parseErr){result={error:'Réponse inattendue du serveur (statut '+res.status+').'}}
+    if(!res.ok){toast('Erreur envoi à '+lead.name+' : '+(result.error||'inconnue'));return false}
+    return true;
+  }catch(err){
+    toast('Erreur réseau en envoyant à '+lead.name+' : '+err.message);
+    return false;
+  }
 }
 async function followUp(i){
   const lead=leads[i];
@@ -45,6 +51,7 @@ async function runAutomation(){
   if(!automationState[1])return toast('Active d’abord la relance après 48 h.');
   const target=leads.filter(l=>l.interest!=='froid'&&l.status!=='Relancé'&&l.email);
   const skipped=leads.filter(l=>l.interest!=='froid'&&l.status!=='Relancé'&&!l.email).length;
+  if(!target.length)return toast(skipped?`Aucun email à envoyer — ${skipped} prospect(s) sans email.`:'Rien à relancer pour le moment.');
   let sent=0;
   for(const l of target){
     const ok=await sendFollowupEmail(l);
