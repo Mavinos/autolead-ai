@@ -82,7 +82,7 @@
   }
 
   async function loadCloudLeads() {
-    const { data, error } = await client.from('leads').select('id,name,company,interest,score,reason,status,follow').order('updated_at', { ascending: false });
+    const { data, error } = await client.from('leads').select('id,name,company,email,interest,score,reason,status,follow').order('updated_at', { ascending: false });
     if (error) return toast('Erreur de chargement : ' + error.message);
     if (data.length) {
       leads.splice(0, leads.length, ...data);
