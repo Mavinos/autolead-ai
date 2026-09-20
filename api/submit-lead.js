@@ -6,24 +6,35 @@
 // - SUPABASE_SERVICE_ROLE_KEY : Supabase → Settings → API → "service_role" (clé SECRÈTE, jamais côté navigateur)
 // - OWNER_USER_ID            : Supabase → Authentication → Users → copie l'UUID de ton compte
 // - GEMINI_API_KEY           : déjà configurée pour qualify-lead.js, réutilisée ici
- 
+ // Fonction serverless Vercel — reçoit les soumissions du formulaire PUBLIC (formulaire.html).
+// Contrairement à qualify-lead.js et send-followup.js, ce endpoint n'exige pas que le visiteur
+// soit connecté : n'importe quel prospect peut soumettre ce formulaire depuis l'extérieur.
+//
+// Variables à ajouter dans Vercel → Settings → Environment Variables :
+// - SUPABASE_SERVICE_ROLE_KEY : Supabase → Settings → API → "service_role" (clé SECRÈTE, jamais côté navigateur)
+// - OWNER_USER_ID            : Supabase → Authentication → Users → copie l'UUID de ton compte
+// - GEMINI_API_KEY           : déjà configurée pour qualify-lead.js, réutilisée ici
+// - RESEND_API_KEY           : déjà configurée pour send-followup.js, réutilisée ici pour la notification
+// - OWNER_EMAIL              : ton adresse email, celle utilisée sur ton compte Resend — reçoit une alerte à chaque nouveau prospect
+
 const SUPABASE_URL = "https://ssdfycziuiqbcfnkvwsm.supabase.co";
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
- 
+const FROM_EMAIL = "Cadence <onboarding@resend.dev>";
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Méthode non autorisée" });
   }
- 
+
   let body = req.body;
   if (typeof body === "string") {
     try { body = JSON.parse(body); } catch (e) { body = {}; }
   }
   const { name, email, company, phone, message, consent, honeypot } = body || {};
- 
+
   // Piège à robots simple : un champ invisible que seul un script automatique remplirait.
   if (honeypot) return res.status(200).json({ ok: true });
- 
+
   if (!name || !email) {
     return res.status(400).json({ error: "Nom et email requis." });
   }
@@ -33,23 +44,23 @@ module.exports = async function handler(req, res) {
   if (!process.env.OWNER_USER_ID || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(500).json({ error: "Le formulaire n'est pas encore configuré côté serveur (OWNER_USER_ID ou clé service manquante)." });
   }
- 
+
   const context = [message, phone ? `Téléphone : ${phone}` : null].filter(Boolean).join(" — ");
- 
+
   // 1) Qualification par l'IA (même logique que qualify-lead.js).
   let score = 50, category = "tiède", reason = "";
   try {
     const prompt = `Tu es un assistant de qualification commerciale B2B pour une petite entreprise française.
 Analyse ce prospect venu d'un formulaire de contact public et donne une note de 0 à 100 (probabilité qu'il devienne client payant) ainsi qu'une catégorie parmi : chaud, tiède, froid.
- 
+
 Prospect :
 - Nom : ${name}
 - Entreprise : ${company || "non précisé"}
 - Message / contexte : ${context || "non précisé"}
- 
+
 Réponds UNIQUEMENT avec un objet JSON strictement de cette forme, sans aucun texte ni markdown autour :
 {"score": <nombre entier entre 0 et 100>, "category": "chaud" | "tiède" | "froid", "reason": "<une phrase courte en français expliquant la note>"}`;
- 
+
     const aiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
       {
@@ -73,7 +84,7 @@ Réponds UNIQUEMENT avec un objet JSON strictement de cette forme, sans aucun te
     // Si l'IA échoue, on enregistre quand même le prospect avec une qualification neutre
     // plutôt que de perdre le contact — mieux vaut un prospect mal noté qu'un prospect perdu.
   }
- 
+
   // 2) Enregistrement dans Supabase avec la clé service (contourne volontairement le RLS,
   //    car ce visiteur n'a pas de session — mais on force nous-mêmes le bon user_id).
   try {
@@ -94,17 +105,48 @@ Réponds UNIQUEMENT avec un objet JSON strictement de cette forme, sans aucun te
         interest: category,
         score,
         reason,
+        notes: context,
         status: score >= 70 ? "Qualifié" : "À qualifier",
         follow: "Nouveau (formulaire)",
         updated_at: new Date().toISOString()
       }])
     });
- 
+
     if (!insertResponse.ok) {
       const errText = await insertResponse.text();
       return res.status(502).json({ error: "Erreur d'enregistrement : " + errText });
     }
- 
+
+    // 3) Alerte immédiate par email pour ne jamais louper un nouveau prospect.
+    if (process.env.OWNER_EMAIL && process.env.RESEND_API_KEY) {
+      try {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+          body: JSON.stringify({
+            from: FROM_EMAIL,
+            to: [process.env.OWNER_EMAIL],
+            subject: `🔔 Nouveau prospect ${category === "chaud" ? "CHAUD" : ""} : ${name}`.trim(),
+            html: `
+              <h2 style="margin:0 0 12px">Nouveau prospect reçu via le formulaire</h2>
+              <table style="font-size:14px;border-collapse:collapse">
+                <tr><td style="padding:4px 12px 4px 0;color:#666">Nom</td><td><b>${name}</b></td></tr>
+                <tr><td style="padding:4px 12px 4px 0;color:#666">Entreprise</td><td>${company || "Non précisé"}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0;color:#666">Email</td><td>${email}</td></tr>
+                ${phone ? `<tr><td style="padding:4px 12px 4px 0;color:#666">Téléphone</td><td>${phone}</td></tr>` : ""}
+                <tr><td style="padding:4px 12px 4px 0;color:#666">Qualification IA</td><td><b>${category} — ${score}/100</b></td></tr>
+                ${reason ? `<tr><td style="padding:4px 12px 4px 0;color:#666">Raison</td><td>${reason}</td></tr>` : ""}
+                ${message ? `<tr><td style="padding:4px 12px 4px 0;color:#666">Message</td><td>${message}</td></tr>` : ""}
+              </table>
+              <p style="margin-top:18px"><a href="https://autolead-ai-afho.vercel.app/autolead-ai-mvp.html">Ouvrir le tableau de bord →</a></p>
+            `
+          })
+        });
+      } catch (notifErr) {
+        // Une alerte qui échoue ne doit jamais faire échouer l'enregistrement du prospect.
+      }
+    }
+
     return res.status(200).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: "Erreur serveur : " + err.message });
