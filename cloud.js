@@ -32,7 +32,7 @@
     overlay.className = 'modal open';
     overlay.id = 'authModal';
     overlay.innerHTML = `<div class="modal-card">
-      <h2>Bienvenue sur AutoLead AI</h2>
+      <h2>Bienvenue sur Cadence</h2>
       <div class="sub">Connecte-toi pour retrouver tes prospects sur tous tes appareils.</div>
       <label class="field">Email ou téléphone<input id="authEmail" type="text" placeholder="toi@entreprise.com ou +33 6 12 34 56 78"></label>
       <label class="field">Mot de passe<input id="authPassword" type="password" placeholder="8 caractères minimum"></label>
